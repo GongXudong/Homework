@@ -1,0 +1,6 @@
+model_checkpoint_path: "/home/gxd/PycharmProjects/DeepLearning/save/my_model-500"
+all_model_checkpoint_paths: "/home/gxd/PycharmProjects/DeepLearning/save/my_model-100"
+all_model_checkpoint_paths: "/home/gxd/PycharmProjects/DeepLearning/save/my_model-200"
+all_model_checkpoint_paths: "/home/gxd/PycharmProjects/DeepLearning/save/my_model-300"
+all_model_checkpoint_paths: "/home/gxd/PycharmProjects/DeepLearning/save/my_model-400"
+all_model_checkpoint_paths: "/home/gxd/PycharmProjects/DeepLearning/save/my_model-500"
