@@ -168,7 +168,8 @@ def train_graph(X, Y):
 
 def test_graph(X, Y):
     y = test_model(X)
-    loss = tf.reduce_mean(tf.square(Y - y), name='pred_loss')
+    loss = tf.nn.softmax_cross_entropy_with_logits(labels=Y, logits=y)
+    # loss = tf.reduce_mean(tf.square(Y - y), name='pred_loss')
     return y, loss
 
 
@@ -190,7 +191,7 @@ def work():
 
         sess.run(tf.global_variables_initializer())
 
-        for epoch in range(500):
+        for epoch in range(50000):
             # batch_size=20, 每次取20个数据点
             s = (epoch*20) % 200
             e = ((epoch + 1) * 20) % 200
@@ -212,7 +213,7 @@ def work():
 
                 print("epoch{%d}, loss: %s, acc: %s" % (epoch+1, cur_loss, acc))
 
-                saver.save(sess, save_path='/home/gxd/PycharmProjects/DeepLearning/save/my_model',
+                saver.save(sess, save_path='./save/my_model',
                            global_step=epoch+1)
 
         # 显示测试集与训练出的分类器

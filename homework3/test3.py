@@ -8,16 +8,18 @@ from tensorflow.examples.tutorials.mnist import input_data
 batch_size = 64
 mnist = input_data.read_data_sets('./data/mnist', one_hot=False)
 
+tf.set_random_seed(1)
+
 print(mnist.train.num_examples, mnist.validation.num_examples, mnist.test.num_examples)
 
 def single_model(X, reuse=False):
     with tf.variable_scope("model", reuse=reuse):
-        w_1 = tf.get_variable('w1', initializer=tf.random_normal(shape=[784, 500]))
-        b_1 = tf.get_variable('b1', initializer=tf.random_normal(shape=[500]))
+        w_1 = tf.get_variable('w1', shape=[784, 500], initializer=tf.truncated_normal_initializer(mean=0., stddev=1.))
+        b_1 = tf.get_variable('b1', shape=[500], initializer=tf.truncated_normal_initializer(mean=0., stddev=1.))
 
-        w_2 = tf.get_variable('w2', initializer=tf.random_normal(shape=[500, 10]))
-        b_2 = tf.get_variable('b2', initializer=tf.random_normal(shape=[10]))
-
+        w_2 = tf.get_variable('w2', shape=[500, 10], initializer=tf.truncated_normal_initializer(mean=0., stddev=1.))
+        b_2 = tf.get_variable('b2', shape=[10], initializer=tf.truncated_normal_initializer(mean=0., stddev=1.))
+        tf.truncated_normal_initializer()
         m_1 = tf.matmul(X, w_1) + b_1
         r_1 = tf.nn.relu(m_1)
 
@@ -94,6 +96,9 @@ def work():
         for epoch in range(10000):
             x1, y1 = mnist.train.next_batch(batch_size=batch_size)
             x2, y2 = mnist.train.next_batch(batch_size=batch_size)
+            if epoch == 1:
+                print(x1[0])
+                break
             tmp = []
             for item in np.array(y1 != y2, dtype=np.float32):
                 tmp.append([item])
