@@ -5,43 +5,70 @@ import numpy as np
 
 from tensorflow.examples.tutorials.mnist import input_data
 
-batch_size = 64
+batch_size = 500
 mnist = input_data.read_data_sets('./data/mnist', one_hot=False)
 
 tf.set_random_seed(1)
 
 print(mnist.train.num_examples, mnist.validation.num_examples, mnist.test.num_examples)
 
-def single_model(X, reuse=False):
-    with tf.variable_scope("model", reuse=reuse):
+
+def process_data(x1, y1, x2, y2, theta=100):
+    res_x1 = []
+    res_x2 = []
+    res_y = []
+    cnt_eq = 0
+    cnt_neq = 0
+
+    for i in range(min(len(x1), len(x2))):
+        if y1[i] == y2[i] and abs((cnt_eq + 1) - cnt_neq) <= theta:
+            res_x1.append(x1[i])
+            res_x2.append(x2[i])
+            res_y.append(0)
+            cnt_eq += 1
+        if y1[i] != y2[i] and abs((cnt_neq + 1) - cnt_eq) <= theta:
+            res_x1.append(x1[i])
+            res_x2.append(x2[i])
+            res_y.append(1)
+            cnt_neq += 1
+
+    return np.array(res_x1), np.array(res_x2), np.array(res_y)
+
+
+'''
+连着两层relu容易梯度爆炸，改为sigmoid
+由于loss中存在指数的计算，迭代一定次数后，容易出现nan，可尝试减小learning_rate
+'''
+def single_model(X):
+    with tf.variable_scope("model", reuse=tf.AUTO_REUSE):
         w_1 = tf.get_variable('w1', shape=[784, 500], initializer=tf.truncated_normal_initializer(mean=0., stddev=1.))
         b_1 = tf.get_variable('b1', shape=[500], initializer=tf.truncated_normal_initializer(mean=0., stddev=1.))
 
         w_2 = tf.get_variable('w2', shape=[500, 10], initializer=tf.truncated_normal_initializer(mean=0., stddev=1.))
         b_2 = tf.get_variable('b2', shape=[10], initializer=tf.truncated_normal_initializer(mean=0., stddev=1.))
-        tf.truncated_normal_initializer()
+
         m_1 = tf.matmul(X, w_1) + b_1
-        r_1 = tf.nn.relu(m_1)
+        r_1 = tf.nn.sigmoid(m_1)
 
         m_2 = tf.matmul(r_1, w_2) + b_2
-        r_2 = tf.nn.relu(m_2)
+        r_2 = tf.nn.sigmoid(m_2)
     return r_2
 
 
-def dual_train_model(X1, X2, reuse_1, reuse_2):
-    m1 = single_model(X1, reuse=reuse_1)
-    m2 = single_model(X2, reuse=reuse_2)
+def dual_train_model(X1, X2):
+    m1 = single_model(X1)
+    m2 = single_model(X2)
     return m1, m2
 
 
 def dual_test_model(X1, X2):
-    m1 = single_model(X1, True)
-    m2 = single_model(X2, True)
+    m1 = single_model(X1)
+    m2 = single_model(X2)
     return m1, m2
 
 
 def train_graph(X1, X2, Y):
-    y1, y2 = dual_train_model(X1, X2, False, True)
+    y1, y2 = dual_train_model(X1, X2)
     with tf.name_scope('train'):
         E_w = tf.sqrt(tf.reduce_sum(tf.square(y1 - y2)))
 
@@ -50,11 +77,12 @@ def train_graph(X1, X2, Y):
                              tf.square(E_w))
         loss_2 = tf.multiply(tf.multiply(Y, tf.constant(2. * 5., dtype=tf.float32)),
                              tf.exp(tf.multiply(tf.constant(-2.77 / 5., dtype=tf.float32), E_w)))
-        loss = tf.reduce_sum(tf.add(loss_1, loss_2))
+        loss = tf.reduce_mean(tf.add(loss_1, loss_2))
 
         optimizer = tf.train.AdamOptimizer(learning_rate=0.01)
         train = optimizer.minimize(loss)
-    return y1, y2, loss_1, loss_2, loss, train
+    #return y1, y2, loss_1, loss_2, loss, train
+    return train
 
 
 def test_graph(X1, X2, Y):
@@ -69,7 +97,7 @@ def test_graph(X1, X2, Y):
                              tf.square(E_w))
         loss_2 = tf.multiply(tf.multiply(Y, tf.constant(2. * 5., dtype=tf.float32)),
                              tf.exp(tf.multiply(tf.constant(-2.77 / 5., dtype=tf.float32), E_w)))
-        loss = tf.reduce_sum(tf.add(loss_1, loss_2))
+        loss = tf.reduce_mean(tf.add(loss_1, loss_2))
 
         correct_prediction = tf.equal(Y, Y_pred)
         accuracy = tf.reduce_mean(tf.cast(correct_prediction, 'float'))
@@ -81,9 +109,8 @@ def work():
     x1_train = tf.placeholder(tf.float32, shape=[None, 784], name='x1_train')
     x2_train = tf.placeholder(tf.float32, shape=[None, 784], name='x2_train')
     y_train = tf.placeholder(tf.float32, shape=[None, 1], name='y_train')
-    #train = train_graph(x1_train, x2_train, y_train)
-    y_1_test, y_2_test, loss_1_test, loss_2_test, loss_test, train = train_graph(x1_train, x2_train, y_train)
-
+    train = train_graph(x1_train, x2_train, y_train)
+    # y_1_test, y_2_test, loss_1_test, loss_2_test, loss_test, train = train_graph(x1_train, x2_train, y_train)
 
     x1_val = tf.placeholder(tf.float32, shape=[None, 784], name='x1_val')
     x2_val = tf.placeholder(tf.float32, shape=[None, 784], name='x2_val')
@@ -96,48 +123,72 @@ def work():
         for epoch in range(10000):
             x1, y1 = mnist.train.next_batch(batch_size=batch_size)
             x2, y2 = mnist.train.next_batch(batch_size=batch_size)
-            if epoch == 1:
-                print(x1[0])
-                break
+            x1_for_train, x2_for_train, y_tmp = process_data(x1, y1, x2, y2)
             tmp = []
-            for item in np.array(y1 != y2, dtype=np.float32):
+            for item in y_tmp:
                 tmp.append([item])
-            y = np.array(tmp, dtype=np.float32)
+            y_for_train = np.array(tmp, dtype=np.float32)
 
-            sess.run([train], feed_dict={x1_train: x1,
-                                         x2_train: x2,
-                                         y_train: y})
+            # if epoch == 1:
+            #     print(x1[0])
+            #     break
+            # tmp = []
+            # for item in np.array(y1 != y2, dtype=np.float32):
+            #     tmp.append([item])
+            # y = np.array(tmp, dtype=np.float32)
+
+            sess.run([train], feed_dict={x1_train: x1_for_train,
+                                         x2_train: x2_for_train,
+                                         y_train: y_for_train})
             # test
-            if epoch < 100:
-                print('epoch ', epoch)
-                a_1, a_2, a_3, a_4, a_5, a_6 = sess.run([y_1_test, y_2_test, loss_1_test, loss_2_test, loss_test, train],
-                         feed_dict={x1_train: x1,
-                                    x2_train: x2,
-                                    y_train: y})
-
-                print('loss_1', a_3)
-                print('loss_2', a_4)
-                print('loss', a_5)
+            # if epoch < 100:
+            #     print('epoch ', epoch)
+            #     a_1, a_2, a_3, a_4, a_5, a_6 = sess.run([y_1_test, y_2_test, loss_1_test, loss_2_test, loss_test, train],
+            #              feed_dict={x1_train: x1,
+            #                         x2_train: x2,
+            #                         y_train: y})
+            #
+            #     print('loss_1', a_3)
+            #     print('loss_2', a_4)
+            #     print('loss', a_5)
 
 
             if epoch % 100 == 99:
-                x1_in_val, y1_in_val = mnist.validation.next_batch(batch_size=50)
-                x2_in_val, y2_in_val = mnist.validation.next_batch(batch_size=50)
-                tmp_val = []
-                for item in np.array(y1 != y2, dtype=np.float32):
-                    tmp_val.append([item])
-                y_in_val = np.array(tmp_val, dtype=np.float32)
+                x1_in_val, y1_in_val = mnist.validation.next_batch(batch_size=2500)
+                x2_in_val, y2_in_val = mnist.validation.next_batch(batch_size=2500)
+                x1_for_val, x2_for_val, y_tmp2 = process_data(x1_in_val, y1_in_val, x2_in_val, y2_in_val)
 
-                cur_acc, cur_loss = sess.run([acc, loss], feed_dict={x1_val: x1_in_val,
-                                                                     x2_val: x2_in_val,
-                                                                     y_val: y_in_val})
-                print(cur_acc.shape, cur_loss.shape)
-                print(cur_acc)
-                print(cur_loss)
+                tmp2 = []
+                for item in y_tmp2:
+                    tmp2.append([item])
+                y_for_val = np.array(tmp2, dtype=np.float32)
+
+                # tmp_val = []
+                # for item in np.array(y1 != y2, dtype=np.float32):
+                #     tmp_val.append([item])
+                # y_in_val = np.array(tmp_val, dtype=np.float32)
+
+                cur_acc, cur_loss = sess.run([acc, loss], feed_dict={x1_val: x1_for_val,
+                                                                     x2_val: x2_for_val,
+                                                                     y_val: y_for_val})
+
                 print('epoch{%d}, acc: %lf, loss: %lf' % ((epoch + 1), cur_acc, cur_loss))
 
 
 if __name__ == '__main__':
     work()
+    # x1_in_val1, y1_in_val1 = mnist.train.next_batch(batch_size=27500)
+    # x2_in_val1, y2_in_val1 = mnist.train.next_batch(batch_size=27500)
+    # x1_in_val, y1_in_val = mnist.train.next_batch(batch_size=27500)
+    # x2_in_val, y2_in_val = mnist.train.next_batch(batch_size=27500)
+    # a, b, c = process_data(x1_in_val, y1_in_val, x2_in_val, y2_in_val)
+    # print(len(a), len(b), len(c))
 
-
+    # a = [1,2,3,4,5]
+    # c = [5,4,3,2,1]
+    # b = [0,1,0,0,0]
+    # d = [0,1,1,1,1]
+    # e,f,g = process_data(a,b,c,d,1)
+    # print(e)
+    # print(f)
+    # print(g)
