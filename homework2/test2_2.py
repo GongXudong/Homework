@@ -4,6 +4,7 @@ import tensorflow as tf
 import numpy as np
 from numpy.linalg import cholesky
 import matplotlib.pyplot as plt
+from sip import array
 
 
 def get_data(mean, variance, number):
@@ -136,9 +137,9 @@ def generate_data(number_train, number_validation, number_test):
     return data_for_train, flag_for_train, data_for_val, flag_for_val, data_for_test, flag_for_test
 
 
-def model(X, reuse=False):
+def model(X):
 
-    with tf.variable_scope("model", reuse=reuse):
+    with tf.variable_scope("model", reuse=tf.AUTO_REUSE):
         w = tf.get_variable("w", initializer=tf.random_normal(shape=[2, 1]))
         b = tf.get_variable("b", initializer=tf.random_normal(shape=[1]))
 
@@ -149,18 +150,20 @@ def model(X, reuse=False):
 
 
 def train_model(X):
-    m = model(X, False)
+    m = model(X)
     return m
 
 
 def test_model(X):
-    m = model(X, True)
+    m = model(X)
     return m
 
 
 def train_graph(X, Y):
     y = train_model(X)
-    loss = tf.reduce_mean(tf.square(Y - y))
+    loss = tf.reduce_mean(- Y * tf.log(y) - (1 - Y) * tf.log(1 - y))
+    # loss = tf.nn.softmax_cross_entropy_with_logits(labels=Y, logits=y)
+    # loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=Y, logits=y)
     optimizer = tf.train.GradientDescentOptimizer(0.01)
     train = optimizer.minimize(loss)
     return train
@@ -168,8 +171,9 @@ def train_graph(X, Y):
 
 def test_graph(X, Y):
     y = test_model(X)
-    loss = tf.nn.softmax_cross_entropy_with_logits(labels=Y, logits=y)
-    # loss = tf.reduce_mean(tf.square(Y - y), name='pred_loss')
+    loss = tf.reduce_mean(- Y * tf.log(y) - (1 - Y) * tf.log(1 - y))
+    # loss = tf.nn.softmax_cross_entropy_with_logits(labels=Y, logits=y)
+    # loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=Y, logits=y)
     return y, loss
 
 
@@ -191,7 +195,7 @@ def work():
 
         sess.run(tf.global_variables_initializer())
 
-        for epoch in range(50000):
+        for epoch in range(500):
             # batch_size=20, 每次取20个数据点
             s = (epoch*20) % 200
             e = ((epoch + 1) * 20) % 200
