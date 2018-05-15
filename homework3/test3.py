@@ -70,7 +70,7 @@ def dual_test_model(X1, X2):
 def train_graph(X1, X2, Y):
     y1, y2 = dual_train_model(X1, X2)
     with tf.name_scope('train'):
-        E_w = tf.sqrt(tf.reduce_sum(tf.square(y1 - y2)))
+        E_w = tf.sqrt(tf.reduce_sum(tf.square(y1 - y2), 1))
 
         loss_1 = tf.multiply(tf.multiply(tf.subtract(tf.constant(1., dtype=tf.float32), Y),
                                          tf.constant(2. / 5., dtype=tf.float32)),

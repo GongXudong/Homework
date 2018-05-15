@@ -217,7 +217,7 @@ def work():
 
                 print("epoch{%d}, loss: %s, acc: %s" % (epoch+1, cur_loss, acc))
 
-                saver.save(sess, save_path='./save/my_model',
+                saver.save(sess, save_path='/home/gxd/PycharmProjects/DeepLearning/save/my_model',
                            global_step=epoch+1)
 
         # 显示测试集与训练出的分类器
