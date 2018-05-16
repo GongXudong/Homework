@@ -4,8 +4,6 @@ import tensorflow as tf
 import numpy as np
 from numpy.linalg import cholesky
 import matplotlib.pyplot as plt
-from sip import array
-
 
 def get_data(mean, variance, number):
     '''

@@ -5,7 +5,7 @@ import numpy as np
 
 from tensorflow.examples.tutorials.mnist import input_data
 
-batch_size = 500
+batch_size = 50
 mnist = input_data.read_data_sets('./data/mnist', one_hot=False)
 
 tf.set_random_seed(1)
@@ -13,170 +13,158 @@ tf.set_random_seed(1)
 print(mnist.train.num_examples, mnist.validation.num_examples, mnist.test.num_examples)
 
 
-def process_data(x1, y1, x2, y2, theta=100):
+def process_data(x1, y1, x2, y2, theta=0.05):
     res_x1 = []
     res_x2 = []
+    res_y1 = []
+    res_y2 = []
     res_y = []
     cnt_eq = 0
     cnt_neq = 0
-
+    theta_ = int(len(x1) * theta)
     for i in range(min(len(x1), len(x2))):
-        if y1[i] == y2[i] and abs((cnt_eq + 1) - cnt_neq) <= theta:
+        if y1[i] == y2[i] and (abs((cnt_eq + 1) - cnt_neq) <= theta_):
             res_x1.append(x1[i])
             res_x2.append(x2[i])
+            res_y1.append(y1[i])
+            res_y2.append(y2[i])
             res_y.append(0)
             cnt_eq += 1
-        if y1[i] != y2[i] and abs((cnt_neq + 1) - cnt_eq) <= theta:
+        if y1[i] != y2[i] and (abs((cnt_neq + 1) - cnt_eq) <= theta_):
             res_x1.append(x1[i])
             res_x2.append(x2[i])
+            res_y1.append(y1[i])
+            res_y2.append(y2[i])
             res_y.append(1)
             cnt_neq += 1
+
+    # for i in range(len(res_y1)):
+    #     print(res_y1[i], res_y2[i], res_y[i])
 
     return np.array(res_x1), np.array(res_x2), np.array(res_y)
 
 
-'''
-连着两层relu容易梯度爆炸，改为sigmoid
-由于loss中存在指数的计算，迭代一定次数后，容易出现nan，可尝试减小learning_rate
-'''
+
 def single_model(X):
+    '''
+    单个网络的输出
+    :param X:
+    :return:
+    '''
     with tf.variable_scope("model", reuse=tf.AUTO_REUSE):
-        w_1 = tf.get_variable('w1', shape=[784, 500], initializer=tf.truncated_normal_initializer(mean=0., stddev=1.))
-        b_1 = tf.get_variable('b1', shape=[500], initializer=tf.truncated_normal_initializer(mean=0., stddev=1.))
+        w_1 = tf.get_variable('w1', shape=[784, 500], initializer=tf.truncated_normal_initializer(mean=0., stddev=0.05))
+        b_1 = tf.get_variable('b1', shape=[500], initializer=tf.zeros_initializer(dtype=tf.float32))
 
-        w_2 = tf.get_variable('w2', shape=[500, 10], initializer=tf.truncated_normal_initializer(mean=0., stddev=1.))
-        b_2 = tf.get_variable('b2', shape=[10], initializer=tf.truncated_normal_initializer(mean=0., stddev=1.))
+        w_2 = tf.get_variable('w2', shape=[500, 10], initializer=tf.truncated_normal_initializer(mean=0., stddev=0.05))
+        b_2 = tf.get_variable('b2', shape=[10], initializer=tf.zeros_initializer(dtype=tf.float32))
 
-        m_1 = tf.matmul(X, w_1) + b_1
-        r_1 = tf.nn.sigmoid(m_1)
+    m_1 = tf.add(tf.matmul(X, w_1), b_1)
+    r_1 = tf.nn.relu(m_1)
 
-        m_2 = tf.matmul(r_1, w_2) + b_2
-        r_2 = tf.nn.sigmoid(m_2)
+    m_2 = tf.add(tf.matmul(r_1, w_2), b_2)
+    r_2 = tf.nn.relu(m_2)
     return r_2
 
 
 def dual_train_model(X1, X2):
+    '''
+    返回连体网络的预测值
+    :param X1:
+    :param X2:
+    :return:
+    '''
     m1 = single_model(X1)
     m2 = single_model(X2)
-    return m1, m2
+    E_w = tf.nn.sigmoid(tf.sqrt(tf.reduce_sum(tf.square(tf.subtract(m1, m2)), 1)))
+    return E_w
 
 
 def dual_test_model(X1, X2):
     m1 = single_model(X1)
     m2 = single_model(X2)
-    return m1, m2
+    E_w = tf.nn.sigmoid(tf.sqrt(tf.reduce_sum(tf.square(tf.subtract(m1, m2)), 1)))
+    return E_w
 
 
 def train_graph(X1, X2, Y):
-    y1, y2 = dual_train_model(X1, X2)
+    pred = dual_train_model(X1, X2)
     with tf.name_scope('train'):
-        E_w = tf.sqrt(tf.reduce_sum(tf.square(y1 - y2), 1))
-
         loss_1 = tf.multiply(tf.multiply(tf.subtract(tf.constant(1., dtype=tf.float32), Y),
                                          tf.constant(2. / 5., dtype=tf.float32)),
-                             tf.square(E_w))
+                             tf.square(pred))
         loss_2 = tf.multiply(tf.multiply(Y, tf.constant(2. * 5., dtype=tf.float32)),
-                             tf.exp(tf.multiply(tf.constant(-2.77 / 5., dtype=tf.float32), E_w)))
+                             tf.exp(tf.multiply(tf.constant(-2.77 / 5., dtype=tf.float32), pred)))
         loss = tf.reduce_mean(tf.add(loss_1, loss_2))
 
-        optimizer = tf.train.AdamOptimizer(learning_rate=0.01)
+        # optimizer = tf.train.AdamOptimizer(learning_rate=0.01)
+        optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.01)
         train = optimizer.minimize(loss)
-    #return y1, y2, loss_1, loss_2, loss, train
     return train
 
 
 def test_graph(X1, X2, Y):
-    y1, y2 = dual_test_model(X1, X2)
-    Y_pred = np.array(y1 != y2, dtype=np.float32)
-
+    pred = dual_test_model(X1, X2)
     with tf.name_scope('test'):
-        E_w = tf.sqrt(tf.reduce_sum(tf.square(y1 - y2)))
 
         loss_1 = tf.multiply(tf.multiply(tf.subtract(tf.constant(1., dtype=tf.float32), Y),
                                          tf.constant(2. / 5., dtype=tf.float32)),
-                             tf.square(E_w))
+                             tf.square(pred))
         loss_2 = tf.multiply(tf.multiply(Y, tf.constant(2. * 5., dtype=tf.float32)),
-                             tf.exp(tf.multiply(tf.constant(-2.77 / 5., dtype=tf.float32), E_w)))
+                             tf.exp(tf.multiply(tf.constant(-2.77 / 5., dtype=tf.float32), pred)))
         loss = tf.reduce_mean(tf.add(loss_1, loss_2))
 
-        correct_prediction = tf.equal(Y, Y_pred)
-        accuracy = tf.reduce_mean(tf.cast(correct_prediction, 'float'))
+    return pred, loss
 
-    return accuracy, loss
 
+def get_acc(y, y_pred):
+    y_pred = y_pred > 0.5
+    acc = (y == y_pred)
+    return np.mean(acc)
 
 def work():
+    # train part
     x1_train = tf.placeholder(tf.float32, shape=[None, 784], name='x1_train')
     x2_train = tf.placeholder(tf.float32, shape=[None, 784], name='x2_train')
     y_train = tf.placeholder(tf.float32, shape=[None, 1], name='y_train')
     train = train_graph(x1_train, x2_train, y_train)
-    # y_1_test, y_2_test, loss_1_test, loss_2_test, loss_test, train = train_graph(x1_train, x2_train, y_train)
 
+    # validation part
     x1_val = tf.placeholder(tf.float32, shape=[None, 784], name='x1_val')
     x2_val = tf.placeholder(tf.float32, shape=[None, 784], name='x2_val')
     y_val = tf.placeholder(tf.float32, shape=[None, 1], name='y_val')
-    acc, loss = test_graph(x1_val, x2_val, y_val)
+    pred, loss = test_graph(x1_val, x2_val, y_val)
 
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
 
         for epoch in range(10000):
+            # prepare data for training
             x1, y1 = mnist.train.next_batch(batch_size=batch_size)
             x2, y2 = mnist.train.next_batch(batch_size=batch_size)
-            x1_for_train, x2_for_train, y_tmp = process_data(x1, y1, x2, y2)
-            tmp = []
-            for item in y_tmp:
-                tmp.append([item])
-            y_for_train = np.array(tmp, dtype=np.float32)
+            x1_for_train, x2_for_train, y_tmp = process_data(x1, y1, x2, y2, 0.05)
+            y_for_train = y_tmp.reshape((-1, 1))
 
-            # if epoch == 1:
-            #     print(x1[0])
-            #     break
-            # tmp = []
-            # for item in np.array(y1 != y2, dtype=np.float32):
-            #     tmp.append([item])
-            # y = np.array(tmp, dtype=np.float32)
-
-            sess.run([train], feed_dict={x1_train: x1_for_train,
-                                         x2_train: x2_for_train,
-                                         y_train: y_for_train})
-            # test
-            # if epoch < 100:
-            #     print('epoch ', epoch)
-            #     a_1, a_2, a_3, a_4, a_5, a_6 = sess.run([y_1_test, y_2_test, loss_1_test, loss_2_test, loss_test, train],
-            #              feed_dict={x1_train: x1,
-            #                         x2_train: x2,
-            #                         y_train: y})
-            #
-            #     print('loss_1', a_3)
-            #     print('loss_2', a_4)
-            #     print('loss', a_5)
-
+            sess.run(train, feed_dict={x1_train: x1_for_train,
+                                       x2_train: x2_for_train,
+                                       y_train: y_for_train})
 
             if epoch % 100 == 99:
+                # prepare data for validation
                 x1_in_val, y1_in_val = mnist.validation.next_batch(batch_size=2500)
                 x2_in_val, y2_in_val = mnist.validation.next_batch(batch_size=2500)
-                x1_for_val, x2_for_val, y_tmp2 = process_data(x1_in_val, y1_in_val, x2_in_val, y2_in_val)
+                x1_for_val, x2_for_val, y_tmp2 = process_data(x1_in_val, y1_in_val, x2_in_val, y2_in_val, 0.05)
+                y_for_val = y_tmp2.reshape((-1, 1))
 
-                tmp2 = []
-                for item in y_tmp2:
-                    tmp2.append([item])
-                y_for_val = np.array(tmp2, dtype=np.float32)
+                _p, cur_loss = sess.run([pred, loss], feed_dict={x1_val: x1_for_val,
+                                                                 x2_val: x2_for_val,
+                                                                 y_val: y_for_val})
 
-                # tmp_val = []
-                # for item in np.array(y1 != y2, dtype=np.float32):
-                #     tmp_val.append([item])
-                # y_in_val = np.array(tmp_val, dtype=np.float32)
-
-                cur_acc, cur_loss = sess.run([acc, loss], feed_dict={x1_val: x1_for_val,
-                                                                     x2_val: x2_for_val,
-                                                                     y_val: y_for_val})
-
-                print('epoch{%d}, acc: %lf, loss: %lf' % ((epoch + 1), cur_acc, cur_loss))
+                print('epoch{%d}, acc: %lf, loss: %lf' % ((epoch + 1), get_acc(y_for_val, _p), cur_loss))
 
 
 if __name__ == '__main__':
     work()
+    # print(get_acc(np.array([1,0,1,1]), np.array([0.8, 0.6, 0.6, 0.7])))
     # x1_in_val1, y1_in_val1 = mnist.train.next_batch(batch_size=27500)
     # x2_in_val1, y2_in_val1 = mnist.train.next_batch(batch_size=27500)
     # x1_in_val, y1_in_val = mnist.train.next_batch(batch_size=27500)
