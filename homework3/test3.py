@@ -5,7 +5,7 @@ import numpy as np
 
 from tensorflow.examples.tutorials.mnist import input_data
 
-batch_size = 50
+batch_size = 100
 mnist = input_data.read_data_sets('./data/mnist', one_hot=False)
 
 tf.set_random_seed(1)
@@ -14,6 +14,16 @@ print(mnist.train.num_examples, mnist.validation.num_examples, mnist.test.num_ex
 
 
 def process_data(x1, y1, x2, y2, theta=0.05):
+    '''
+    简单的处理数据，使正负样本大致均衡
+    只能利用10%左右的数据
+    :param x1:
+    :param y1:
+    :param x2:
+    :param y2:
+    :param theta:
+    :return:
+    '''
     res_x1 = []
     res_x2 = []
     res_y1 = []
@@ -38,16 +48,13 @@ def process_data(x1, y1, x2, y2, theta=0.05):
             res_y.append(1)
             cnt_neq += 1
 
-    # for i in range(len(res_y1)):
-    #     print(res_y1[i], res_y2[i], res_y[i])
-
     return np.array(res_x1), np.array(res_x2), np.array(res_y)
 
 
 
 def single_model(X):
     '''
-    单个网络的输出
+    返回单个网络的输出
     :param X:
     :return:
     '''
@@ -75,14 +82,14 @@ def dual_train_model(X1, X2):
     '''
     m1 = single_model(X1)
     m2 = single_model(X2)
-    E_w = tf.nn.sigmoid(tf.sqrt(tf.reduce_sum(tf.square(tf.subtract(m1, m2)), 1)))
+    E_w = tf.sqrt(tf.reduce_sum(tf.square(tf.subtract(m1, m2)), 1) + 1e-6)
     return E_w
 
 
 def dual_test_model(X1, X2):
     m1 = single_model(X1)
     m2 = single_model(X2)
-    E_w = tf.nn.sigmoid(tf.sqrt(tf.reduce_sum(tf.square(tf.subtract(m1, m2)), 1)))
+    E_w = tf.sqrt(tf.reduce_sum(tf.square(tf.subtract(m1, m2)), 1) + 1e-6)
     return E_w
 
 
@@ -96,10 +103,10 @@ def train_graph(X1, X2, Y):
                              tf.exp(tf.multiply(tf.constant(-2.77 / 5., dtype=tf.float32), pred)))
         loss = tf.reduce_mean(tf.add(loss_1, loss_2))
 
-        # optimizer = tf.train.AdamOptimizer(learning_rate=0.01)
-        optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.01)
+        # optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
+        optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.0001)
         train = optimizer.minimize(loss)
-    return train
+    return pred, train
 
 
 def test_graph(X1, X2, Y):
@@ -117,7 +124,7 @@ def test_graph(X1, X2, Y):
 
 
 def get_acc(y, y_pred):
-    y_pred = y_pred > 0.5
+    y_pred = y_pred > 2.3
     acc = (y == y_pred)
     return np.mean(acc)
 
@@ -126,7 +133,7 @@ def work():
     x1_train = tf.placeholder(tf.float32, shape=[None, 784], name='x1_train')
     x2_train = tf.placeholder(tf.float32, shape=[None, 784], name='x2_train')
     y_train = tf.placeholder(tf.float32, shape=[None, 1], name='y_train')
-    train = train_graph(x1_train, x2_train, y_train)
+    pred_in_train, train = train_graph(x1_train, x2_train, y_train)
 
     # validation part
     x1_val = tf.placeholder(tf.float32, shape=[None, 784], name='x1_val')
@@ -137,16 +144,17 @@ def work():
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
 
-        for epoch in range(10000):
+        for epoch in range(50000):
             # prepare data for training
             x1, y1 = mnist.train.next_batch(batch_size=batch_size)
             x2, y2 = mnist.train.next_batch(batch_size=batch_size)
             x1_for_train, x2_for_train, y_tmp = process_data(x1, y1, x2, y2, 0.05)
             y_for_train = y_tmp.reshape((-1, 1))
 
-            sess.run(train, feed_dict={x1_train: x1_for_train,
+            __, _ = sess.run([pred_in_train, train], feed_dict={x1_train: x1_for_train,
                                        x2_train: x2_for_train,
                                        y_train: y_for_train})
+            # print('epoch{%d}, acc: %lf' % ((epoch+1), get_acc(y_for_train, __)))
 
             if epoch % 100 == 99:
                 # prepare data for validation
@@ -160,6 +168,7 @@ def work():
                                                                  y_val: y_for_val})
 
                 print('epoch{%d}, acc: %lf, loss: %lf' % ((epoch + 1), get_acc(y_for_val, _p), cur_loss))
+                print("ave_dis for pos: %lf; ave_dis for neg: %lf" % (np.average(_p[y_tmp2 == 0.]), np.average(_p[y_tmp2 == 1.])))
 
 
 if __name__ == '__main__':
