@@ -5,7 +5,6 @@ import numpy as np
 
 from tensorflow.examples.tutorials.mnist import input_data
 
-batch_size = 100
 mnist = input_data.read_data_sets('./data/mnist', one_hot=False)
 
 tf.set_random_seed(1)
@@ -13,43 +12,43 @@ tf.set_random_seed(1)
 print(mnist.train.num_examples, mnist.validation.num_examples, mnist.test.num_examples)
 
 
-def process_data(x1, y1, x2, y2, theta=0.05):
-    '''
-    简单的处理数据，使正负样本大致均衡
-    只能利用10%左右的数据
-    :param x1:
-    :param y1:
-    :param x2:
-    :param y2:
-    :param theta:
-    :return:
-    '''
-    res_x1 = []
-    res_x2 = []
-    res_y1 = []
-    res_y2 = []
-    res_y = []
-    cnt_eq = 0
-    cnt_neq = 0
-    theta_ = int(len(x1) * theta)
-    for i in range(min(len(x1), len(x2))):
-        if y1[i] == y2[i] and (abs((cnt_eq + 1) - cnt_neq) <= theta_):
-            res_x1.append(x1[i])
-            res_x2.append(x2[i])
-            res_y1.append(y1[i])
-            res_y2.append(y2[i])
-            res_y.append(0)
-            cnt_eq += 1
-        if y1[i] != y2[i] and (abs((cnt_neq + 1) - cnt_eq) <= theta_):
-            res_x1.append(x1[i])
-            res_x2.append(x2[i])
-            res_y1.append(y1[i])
-            res_y2.append(y2[i])
-            res_y.append(1)
-            cnt_neq += 1
+def balanced_batch(batch_x, batch_y, num_cls=10):
+    batch_size = len(batch_y)
+    pos_per_cls_e = round(batch_size / 2 / num_cls)
 
-    return np.array(res_x1), np.array(res_x2), np.array(res_y)
+    index = batch_y.argsort()
+    ys_1 = batch_y[index]
+    # print(ys_1)
 
+    num_class = []
+    pos_samples = []
+    neg_samples = set()
+    cur_ind = 0
+    for item in set(ys_1):
+        num_class.append((ys_1 == item).sum())
+        num_pos = pos_per_cls_e
+        while (num_pos > num_class[-1]):
+            num_pos -= 2
+        pos_samples.extend(np.random.choice(index[cur_ind:cur_ind + num_class[-1]], num_pos, replace=False).tolist())
+        neg_samples = neg_samples | (set(index[cur_ind:cur_ind + num_class[-1]]) - set(list(pos_samples)))
+        cur_ind += num_class[-1]
+
+    neg_samples = list(neg_samples)
+
+    x1_index = pos_samples[::2]
+    x2_index = pos_samples[1:len(pos_samples) + 1:2]
+
+    x1_index.extend(neg_samples[::2])
+    x2_index.extend(neg_samples[1:len(neg_samples) + 1:2])
+
+    p_index = np.random.permutation(len(x1_index))
+    x1_index = np.array(x1_index)[p_index]
+    x2_index = np.array(x2_index)[p_index]
+
+    r_x1_batch = batch_x[x1_index]
+    r_x2_batch = batch_x[x2_index]
+    r_y_batch = np.array(batch_y[x1_index] != batch_y[x2_index], dtype=np.float32)
+    return r_x1_batch, r_x2_batch, r_y_batch
 
 
 def single_model(X):
@@ -104,7 +103,7 @@ def train_graph(X1, X2, Y):
         loss = tf.reduce_mean(tf.add(loss_1, loss_2))
 
         # optimizer = tf.train.AdamOptimizer(learning_rate=0.001)
-        optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.0001)
+        optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.001)
         train = optimizer.minimize(loss)
     return pred, train
 
@@ -146,9 +145,8 @@ def work():
 
         for epoch in range(50000):
             # prepare data for training
-            x1, y1 = mnist.train.next_batch(batch_size=batch_size)
-            x2, y2 = mnist.train.next_batch(batch_size=batch_size)
-            x1_for_train, x2_for_train, y_tmp = process_data(x1, y1, x2, y2, 0.05)
+            x1, y1 = mnist.train.next_batch(batch_size=64*2)
+            x1_for_train, x2_for_train, y_tmp = balanced_batch(x1, y1)
             y_for_train = y_tmp.reshape((-1, 1))
 
             __, _ = sess.run([pred_in_train, train], feed_dict={x1_train: x1_for_train,
@@ -156,11 +154,10 @@ def work():
                                        y_train: y_for_train})
             # print('epoch{%d}, acc: %lf' % ((epoch+1), get_acc(y_for_train, __)))
 
-            if epoch % 100 == 99:
+            if epoch % 1000 == 999:
                 # prepare data for validation
-                x1_in_val, y1_in_val = mnist.validation.next_batch(batch_size=2500)
-                x2_in_val, y2_in_val = mnist.validation.next_batch(batch_size=2500)
-                x1_for_val, x2_for_val, y_tmp2 = process_data(x1_in_val, y1_in_val, x2_in_val, y2_in_val, 0.05)
+                x1_in_val, y1_in_val = mnist.validation.next_batch(batch_size=5000)
+                x1_for_val, x2_for_val, y_tmp2 = balanced_batch(x1_in_val, y1_in_val)
                 y_for_val = y_tmp2.reshape((-1, 1))
 
                 _p, cur_loss = sess.run([pred, loss], feed_dict={x1_val: x1_for_val,
@@ -173,19 +170,3 @@ def work():
 
 if __name__ == '__main__':
     work()
-    # print(get_acc(np.array([1,0,1,1]), np.array([0.8, 0.6, 0.6, 0.7])))
-    # x1_in_val1, y1_in_val1 = mnist.train.next_batch(batch_size=27500)
-    # x2_in_val1, y2_in_val1 = mnist.train.next_batch(batch_size=27500)
-    # x1_in_val, y1_in_val = mnist.train.next_batch(batch_size=27500)
-    # x2_in_val, y2_in_val = mnist.train.next_batch(batch_size=27500)
-    # a, b, c = process_data(x1_in_val, y1_in_val, x2_in_val, y2_in_val)
-    # print(len(a), len(b), len(c))
-
-    # a = [1,2,3,4,5]
-    # c = [5,4,3,2,1]
-    # b = [0,1,0,0,0]
-    # d = [0,1,1,1,1]
-    # e,f,g = process_data(a,b,c,d,1)
-    # print(e)
-    # print(f)
-    # print(g)
