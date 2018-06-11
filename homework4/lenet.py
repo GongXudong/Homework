@@ -28,7 +28,7 @@ class LeNet:
         return self.train_op
 
     def get_loss_and_acc(self):
-        return self.loss_val, self.acc
+        return self.loss, self.acc
 
     def cnnLayer(self, x, kHeight, kWidth, strideX, strideY, featureNum, name, padding='SAME'):
         channels = int(x.get_shape()[-1])
